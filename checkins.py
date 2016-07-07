@@ -75,95 +75,76 @@ for i_bin_x, i_bin_y in itertools.product(xrange(100), xrange(100)):
     t1 = time()
     print("Bin {},{}".format(i_bin_x, i_bin_y))
 
-    # choose the correct bin, sort values in time to better simulate
-    # the real train/test split for k-fold validation
     training_set = train[(train.x_bin_100 == i_bin_x) & (train.y_bin_100 == i_bin_y)]
     testing_set = test[(test.x_bin_100 == i_bin_x) & (test.y_bin_100 == i_bin_y)]
 
     print 'Place IDs:', len(np.unique(training_set['place_id']))
     print 'Train length:', len(training_set), 'Test length:', len(testing_set)
 
-    training_set['day_number'] = ((training_set['time']/60)//24).astype(int)
-    training_set['hour'] = (training_set['time']//60)%24+1 # 1 to 24
-    training_set['dow'] = (training_set['time']//1440)%7+1
-    training_set['month'] = (training_set['time']//43200)%12+1 # rough estimate, month = 30 days
-    training_set['year'] = (training_set['time']//525600)+1
-    # training_set['seconds'] = (training_set['time'] * 60)
-    # training_set['date_time'] = pd.to_datetime(training_set['seconds'],unit='s')
-    # training_set['hour'] = training_set['date_time'].dt.hour
-    # training_set['dow'] = training_set['date_time'].dt.dayofweek
-    # training_set['week_of_year'] = training_set['date_time'].dt.weekofyear
+    minute = 2*np.pi*((training_set["time"]//5)%288)/288
+    training_set['minute'] = minute
+    training_set['minute_sin'] = (np.sin(minute)+1).round(4)
+    training_set['minute_cos'] = (np.cos(minute)+1).round(4)
+    del minute
+    day = 2*np.pi*((training_set['time']//1440)%365)/365
+    training_set['day'] = day
+    training_set['day_of_year_sin'] = (np.sin(day)+1).round(4)
+    training_set['day_of_year_cos'] = (np.cos(day)+1).round(4)
+    del day
+    weekday = 2*np.pi*((training_set['time']//1440)%7)/7
+    training_set['weekday'] = weekday
+    training_set['weekday_sin'] = (np.sin(weekday)+1).round(4)
+    training_set['weekday_cos'] = (np.cos(weekday)+1).round(4)
+    del weekday
+    training_set['year'] = (((training_set['time'])//525600))
+    training_set.drop(['time'], axis=1, inplace=True)
+    training_set['month'] = ((training_set['weekday']//30)%12+1)*2.73
+    training_set['accuracy'] = np.log10(training_set['accuracy'])*14.4
 
+    training_set.loc[:,'x'] *= 465.0
+    training_set.loc[:,'y'] *= 975.0
+    training_set['squadd']= (training_set.x**2 + training_set.y**2)
 
-    accuracy_means = training_set.groupby(['place_id'], as_index=False)[["x", "y", "accuracy"]].mean()
-    time_mean = training_set.groupby(['place_id'], as_index=False)[["hour", "dow", "month"]].mean()
+    
+    
+    minute = 2*np.pi*((testing_set["time"]//5)%288)/288
+    testing_set['minute'] = minute
+    testing_set['minute_sin'] = (np.sin(minute)+1).round(4)
+    testing_set['minute_cos'] = (np.cos(minute)+1).round(4)
+    del minute
+    day = 2*np.pi*((testing_set['time']//1440)%365)/365
+    testing_set['day'] = day
+    testing_set['day_of_year_sin'] = (np.sin(day)+1).round(4)
+    testing_set['day_of_year_cos'] = (np.cos(day)+1).round(4)
+    del day
+    weekday = 2*np.pi*((testing_set['time']//1440)%7)/7
+    testing_set['weekday'] = weekday
+    testing_set['weekday_sin'] = (np.sin(weekday)+1).round(4)
+    testing_set['weekday_cos'] = (np.cos(weekday)+1).round(4)
+    del weekday
+    testing_set['year'] = (((testing_set['time'])//525600))
+    testing_set.drop(['time'], axis=1, inplace=True)
+    testing_set['month'] = ((testing_set['weekday']//30)%12+1)*2.73
+    testing_set['accuracy'] = np.log10(testing_set['accuracy'])*14.4
 
-    accuracy_kde = neighbors.KernelDensity(kernel='gaussian', bandwidth=0.2).fit(accuracy_means[["x", "y", "accuracy"]].values)
-    time_kde = neighbors.KernelDensity(kernel='gaussian', bandwidth=0.2).fit(time_mean[["hour", "dow", "month"]].values)
-
-
-    training_set['acc_kde'] = accuracy_kde.score_samples(training_set[["x", "y", "accuracy"]].values)
-    training_set['time_kde'] = time_kde.score_samples(training_set[["hour", "dow", "month"]].values)
-    mean_group = training_set.groupby(['hour'], as_index=False)[["x", "y"]].mean()
-    training_set = pd.merge(training_set, mean_group, on='hour')
-    training_set['acc_norm'] = preprocessing.MinMaxScaler(feature_range=(0,25)).fit_transform(np.array(training_set.accuracy.astype(np.float)).reshape((len(training_set.accuracy), 1)))
-    #     training_set['time_proportion'] = ((training_set.time - training_set.time.min()) / (training_set.time.max() - training_set.time.min()))
-
-    #     training_set['r'] = np.sqrt((training_set.x_x-training_set.x_y)**2+(training_set.y_x-training_set.y_y)**2)
-    #     training_set['minute'] = training_set['date_time'].dt.minute
-
-    #     training_set['day'] = training_set['date_time'].dt.day
-    training_set.x_x.replace(0, .0001, inplace=True)
-    training_set.y_x.replace(0, .0001, inplace=True)
-    training_set['squadd']= (training_set.x_x**2 + training_set.y_x**2)
-    #     training_set['acc_squ'] = (training_set.accuracy**2 / (training_set.x / training_set.y))
-    #     training_set['acc_x'] = (training_set.accuracy * training_set.x)
-    #     training_set['acc_y'] = (training_set.accuracy * training_set.y)
-    #     training_set['time_change'] = ((training_set.time - np.mean(training_set.time))/np.std(training_set.time))
-
-    testing_set['hour'] = (testing_set['time']//60)%24+1 # 1 to 24
-    testing_set['dow'] = (testing_set['time']//1440)%7+1
-    testing_set['month'] = (testing_set['time']//43200)%12+1 # rough estimate, month = 30 days
-    testing_set['year'] = (testing_set['time']//525600)+1
-
-    # testing_set['seconds'] = (testing_set['time'] * 60)
-    # testing_set['date_time'] = pd.to_datetime(testing_set['seconds'],unit='s')
-    # testing_set['hour'] = testing_set['date_time'].dt.hour
-    # testing_set['dow'] = testing_set['date_time'].dt.dayofweek
-    # testing_set['week_of_year'] = testing_set['date_time'].dt.weekofyear
-
-    testing_set['acc_kde'] = accuracy_kde.score_samples(testing_set[["x", "y", "accuracy"]].values)
-    testing_set['time_kde'] = time_kde.score_samples(testing_set[["hour", "dow", "month"]].values)
-
-    mean_group = testing_set.groupby(['hour'], as_index=False)[["x", "y"]].mean()
-    testing_set = pd.merge(testing_set, mean_group, on='hour')
-    testing_set['acc_norm'] = preprocessing.MinMaxScaler(feature_range=(0,25)).fit_transform(np.array(testing_set.accuracy.astype(np.float)).reshape((len(testing_set.accuracy), 1)))
-    #     testing_set['time_proportion'] = (abs((testing_set.time - testing_set.time.min()) - testing_set.time.max()) / (testing_set.time.max() - testing_set.time.min()))
-
-    #     testing_set['r'] = np.sqrt((testing_set.x_x-testing_set.x_y)**2+(testing_set.y_x-testing_set.y_y)**2)
-    #     testing_set['minute'] = testing_set['date_time'].dt.minute
-
-    testing_set.x_x.replace(0, .0001, inplace=True)
-    testing_set.y_x.replace(0, .0001, inplace=True)
-    testing_set['squadd']= (testing_set.x_x**2 + testing_set.y_x**2)
-    #     testing_set['acc_squ'] = (testing_set.accuracy**2 / (testing_set.x / testing_set.y))
-    #     testing_set['acc_x'] = (testing_set.accuracy * testing_set.x)
-    #     testing_set['acc_y'] = (testing_set.accuracy * testing_set.y)
-    #     testing_set['time_change'] = ((testing_set.time - np.mean(testing_set.time))/np.std(testing_set.time))
+    testing_set.loc[:,'x'] *= 465.0
+    testing_set.loc[:,'y'] *= 975.0
+    testing_set['squadd']= (testing_set.x**2 + testing_set.y**2)
 
     features = [c for c in training_set.columns if c in ['year','month','dow','squadd','hour','time_kde','x_x', 'y_x','acc_norm']]
 
+    le = preprocessing.LabelEncoder()
+    labels = le.fit_transform(training_set.place_id.values)
 
-    #     features_train, features_test, labels_train, labels_test = cross_validation.train_test_split(train_in_bin[features], train_in_bin['place_id'], test_size=0.70)
-    forest = ensemble.RandomForestClassifier(n_estimators=estimator, min_samples_leaf=5, n_jobs=-1).fit(training_set[features], training_set['place_id'])
-    #     boost = xgb.XGBClassifier(objective='multi:softprob', n_estimators=estimator, nthread=4).fit(training_set[features], training_set['place_id'])
-    probs = pd.DataFrame(forest.predict_proba(testing_set[features]))
-    probs.columns = np.unique(training_set['place_id'].sort_values().values)
-    preds = pd.DataFrame([list([r.sort_values(ascending=False)[:3].index.values]) for i,r in probs.iterrows()])
+    forest = ensemble.RandomForestClassifier(n_estimators=estimator, min_samples_leaf=5, n_jobs=-1).fit(training_set.drop(['row_id', 'place_id', 'x_bin_100', 'y_bin_100',], axis=1).values, labels)
+    probs = forest.predict_proba(testing_set.drop(['row_id', 'x_bin_100', 'y_bin_100'], axis=1).values)
+
+    # probs.columns = np.unique(training_set['place_id'].sort_values().values)
+    preds = pd.DataFrame(le.inverse_transform(np.argsort(probs, axis=1)[:,::-1][:,:3]))
 
     
     ids.append(list(testing_set['row_id'].values))
-    predictions.append(preds[0])
+    predictions.append(preds.values)
     print "Analysis time:",round(time()-t1,3),"s"
 print "Training loop completed:",round((time()-start_time)/60,2),"m"
 
